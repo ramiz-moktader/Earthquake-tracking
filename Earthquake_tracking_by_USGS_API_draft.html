@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Document</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #map {
+            flex: 1;
+            z-index: 1;
+        }
+        #datePickerForm {
+            max-width: 400px;
+            margin: 10px;
+            display: center;
+            align-items: center;
+            flex-wrap: wrap;
+            z-index: 2;
+            position: relative;
+            background-color: #fff;
+            padding: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        label, input {
+            width: 50%;
+            box-sizing: border-box;
+            padding: 5px;
+        }
+
+        button {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 600px) {
+            #datePickerForm label, #datePickerForm input, #datePickerForm button {
+                width: 100%;
+            }
+        }
+
+        #loadingMessage {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            font-size: 18px;
+            background-color: #fff;
+            padding: 20px;
+            border: 1px solid #ddd;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            z-index: 3;
+        }
+
+        .legend {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #fff;
+    padding: 20px; /* Adjust the padding as needed */
+    border: 1px solid #ccc;
+    border-radius: 10px; /* Adjust the border-radius as needed */
+    z-index: 2;
+    display: flex;
+    flex-direction: column; /* Display icons vertically */
+}
+
+.legend div {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.legend-icon {
+    width: 15px; /* Default smaller size for all screens */
+    height: 15px; /* Default smaller size for all screens */
+    margin-right: 5px;
+}
+
+@media (min-width: 576px) {
+    /* Adjust icon size for small screens */
+    .legend-icon {
+        width: 20px;
+        height: 20px;
+    }
+    
+}
+
+@media (min-width: 768px) {
+    /* Further adjust icon size for medium screens */
+    .legend-icon {
+        width: 30px;
+        height: 30px;
+    }
+}
+
+@media (min-width: 992px) {
+    /* Further adjust icon size for larger screens if needed */
+    .legend-icon {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+        
+    </style>
+</head>
+<body>
+
+    <div id="datePickerForm">
+        <h1> Earthquake tracker</h1>
+        <label for="year">Year:</label>
+        <input type="number" id="year" placeholder="YYYY" list="yearSuggestions">
+
+        <label for="month">Month:</label>
+        <input type="number" id="month" placeholder="MM" list="monthSuggestions">
+
+        <label for="day">Day:</label>
+        <input type="number" id="day" placeholder="DD" list="daySuggestions">
+
+        <button onclick="getSelectedDate()">Get Selected Date</button>
+    </div>
+    <div id="errorMessage"></div>
+    <div id="loadingMessage">Loading...</div>
+    <div id="map"></div>
+
+    <script>
+        var map = L.map('map').setView([51.505, -0.09], 2);
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+
+
+        var LeafIcon = L.Icon.extend({
+    options: {
+        iconSize:     [38, 95],
+        shadowSize:   [50, 64],
+        iconAnchor:   [22, 94],
+        shadowAnchor: [0, 6],
+        popupAnchor:  [-3, -76]
+    }
+});
+
+var icon1 = new LeafIcon({iconUrl: 'icons/icon-1.png'}),
+    icon2 = new LeafIcon({iconUrl: 'icons/icon-2.png'}),
+    icon3 = new LeafIcon({iconUrl: 'icons/icon-3.png'}),
+    icon4 = new LeafIcon({iconUrl: 'icons/icon-4.png'}),
+    icon5 = new LeafIcon({iconUrl: 'icons/icon-5.png'})
+
+        function clearMarkersAndCircles() {
+            // Clear existing markers and circles
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker || layer instanceof L.Circle) {
+                    map.removeLayer(layer);
+                }
+            });
+        }
+
+        async function getSelectedDate() {
+            // Retrieve the values from input fields
+            const year = document.getElementById('year').value;
+            const month = document.getElementById('month').value;
+            const day = document.getElementById('day').value;
+
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1; // Month is zero-based
+            const currentDay = currentDate.getDate();
+
+            // Perform validations
+            if (year > currentYear || month > 12 || day > 30) {
+                let errorDiv = document.getElementById("errorMessage");
+                errorDiv.innerHTML = "<h1> Invalid input. Please check the year, month, and day.</h1>";
+            } else if ((year && month && day) && (year < 2024 || (year == 2024 && month <= currentMonth && day <= currentDay))) {
+
+                clearMarkersAndCircles();
+
+                // Show loading message
+                let errorDiv = document.getElementById("errorMessage");
+                errorDiv.innerHTML = "Loading...";
+
+                // Save values to localStorage
+                localStorage.setItem('storedYear', year);
+                localStorage.setItem('storedMonth', month);
+                localStorage.setItem('storedDay', day);
+
+                // Call another function with the selected date
+                await getData(year, month, day);
+
+                // Clear error message
+                errorDiv.innerHTML = "";
+
+            } else {
+                let errorDiv = document.getElementById("errorMessage");
+                errorDiv.innerHTML = "Please enter a valid date.";
+            }
+
+            // Do something with the selected date (e.g., print to console)
+            console.log(`Selected Date: ${year}-${month}-${day}`);
+        }
+
+        getSelectedDate();
+
+        async function getData(year, month, day) {
+            let url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${year}-${month}-${day}&endtime=${year}-${month}-${Number(day)+1}`;
+            try {
+                showLoading();
+                let data = await fetch(url);
+                let res = await data.json();
+                await addMarker(res);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                let errorDiv = document.getElementById("errorMessage");
+                errorDiv.innerHTML = "Error fetching data. Please try again.";
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function addMarker(data) {
+            let marks = data.features;
+            console.log(marks)
+            marks.forEach(function (coord) {
+                // Correct the order of latitude and longitude
+                let lat = coord.geometry.coordinates[1];
+                let long = coord.geometry.coordinates[0];
+                let detialsUrl = coord.properties.url
+                console.log(detialsUrl)
+                let mag = coord.properties.mag;
+                let circleRadius = mag ;
+                let place = coord.properties.place;
+                console.log(lat, long, mag, typeof mag);
+
+                // Use L.marker to create markers
+                // let marker = new L.marker([lat, long]).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude: </b> ${mag}`);
+                if (mag < 1.0) {
+
+                    let marker = new L.marker([lat, long],{icon: icon1}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+                    let circle = new L.circle([lat, long], {
+                        color: '#CCCCCC',
+                        fillColor: '#CCCCCC',
+                        fillOpacity: 0.5,
+                        radius: circleRadius
+                    }).addTo(map);
+                } else if (mag >= 1.0 && mag < 3.0) {
+                    let marker = new L.marker([lat, long],{icon: icon1}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+                    let circle = new L.circle([lat, long], {
+                        color: '#CCCCCC',
+                        fillColor: '#CCCCCC',
+                        fillOpacity: 0.5,
+                        radius: circleRadius
+                    }).addTo(map);
+                } else if (mag >= 3.0 && mag < 4.0) {
+                    let marker = new L.marker([lat, long],{icon: icon2}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+                    let circle = new L.circle([lat, long], {
+                        color: '#0000FF',
+                        fillColor: '#0000FF',
+                        fillOpacity: 0.5,
+                        radius: circleRadius * 1000
+                    }).addTo(map);
+
+                } else if (mag >= 4.0 && mag < 5.0) {
+                    let marker = new L.marker([lat, long],{icon: icon3}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+                    let circle = new L.circle([lat, long], {
+                        color: 'yellow',
+                        fillColor: 'yellow',
+                        fillOpacity: 0.5,
+                        radius: circleRadius 
+                    }).addTo(map);
+
+                } else if (mag >= 5.0 && mag < 6.0) {
+                    let marker = new L.marker([lat, long],{icon: icon4}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+                    let circle = new L.circle([lat, long], {
+                        color: 'orange',
+                        fillColor: 'orange',
+                        fillOpacity: 0.5,
+                        radius: circleRadius 
+                    }).addTo(map);
+                } else if (mag >= 6.0 && mag < 7.0) {
+                    let marker = new L.marker([lat, long],{icon: icon5}).addTo(map).bindPopup(`<b>Place:</b> ${place} <br><b>Magnitude:  </b>${mag} <br> <a href="${detialsUrl}" target="_blank">Click here to know details </a>`);
+
+
+                    let circle = new L.circle([lat, long], {
+                        color: 'red',
+                        fillColor: '#f03',
+                        fillOpacity: 0.5,
+                        radius: circleRadius * 10000
+                    }).addTo(map);
+                } else {
+                    // Handle cases for magnitudes greater than or equal to 7.0 if needed
+                    let circle = new L.circle([lat, long], {
+                        color: 'red',
+                        fillColor: '#f07',
+                        fillOpacity: 0.5,
+                        radius: circleRadius * 100000
+                    }).addTo(map);
+                }
+            });
+        }
+
+        function showLoading() {
+            const loadingMessage = document.getElementById('loadingMessage');
+            loadingMessage.style.display = 'block';
+        }
+
+        function hideLoading() {
+            const loadingMessage = document.getElementById('loadingMessage');
+            loadingMessage.style.display = 'none';
+        }
+
+
+        // Define legend content
+var legendContent  = '<div class="legend">' +
+                    '<div><img src="icons/icon-1.png" class="legend-icon"> 1.0 ≤ Magnitude < 3.0</div>' +
+                    '<div><img src="icons/icon-2.png" class="legend-icon"> 3.0 ≤ Magnitude < 4.0</div>' +
+                    '<div><img src="icons/icon-3.png" class="legend-icon"> 4.0 ≤ Magnitude < 5.0</div>' +
+                    '<div><img src="icons/icon-4.png" class="legend-icon"> 5.0 ≤ Magnitude < 6.0</div>' +
+                    '<div><img src="icons/icon-5.png" class="legend-icon">      Magnitude ≥ 6.0</div>' +
+                    '</div>';
+
+
+// Create a custom control
+var legendControl = L.control({ position: 'bottomleft' });
+
+// Implement onAdd method for the control
+legendControl.onAdd = function (map) {
+    var div = L.DomUtil.create('div', 'info legend');
+    div.innerHTML = legendContent;
+    return div;
+};
+
+// Add the control to the map
+legendControl.addTo(map);
+
+    </script>
+</body>
+</html>
